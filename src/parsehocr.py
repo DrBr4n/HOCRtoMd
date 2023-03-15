@@ -1,7 +1,11 @@
 import xml.etree.ElementTree as ET
 from PIL import Image, ImageDraw
 
-tree = ET.parse('out.hocr')
+tree = ET.parse('../out/out.hocr')
+#tree = ET.parse('../out/out1.hocr')
+image = Image.open("../assets/pdf_P-000.jpg")
+#image = Image.open("../assets/pdf_P-001.jpg")
+
 
 root = tree.getroot() #root[0] = <head>; root[1] = <body>
 
@@ -32,11 +36,11 @@ for par in list(data.keys()):
         del data[par]
 
 
-
-image = Image.open("_.pdf_P-000.jpg")
-
+# draw paragraph boxes
 for par in data:
-    x, y, height, width = int(data[par]['bbox'][0]), int(data[par]['bbox'][1]), int(data[par]['bbox'][0]) + int(data[par]['bbox'][2]), int(data[par]['bbox'][0]) + int(data[par]['bbox'][3])
+    
+    x, y, height, width =  int(data[par]['bbox'][0]), int(data[par]['bbox'][1]), int(data[par]['bbox'][2]), int(data[par]['bbox'][3])
+   
     ImageDraw.Draw(image).rectangle([x, y, height, width], fill=None, outline='green')
 
 image.show()
