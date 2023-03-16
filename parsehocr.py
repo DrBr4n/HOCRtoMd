@@ -39,27 +39,57 @@ def parseHocr():
         if child.get('class') == 'ocrx_word':
             data[last_par]['text'] += child.text + " " #if x_wconf > k ?
 
+    # cleanup paragraphs of only whitespaces
+    for par in list(data.keys()):
+        if data[par]['text'].isspace():
+            del data[par]
+    
     return data 
 
-# cleanup paragraphs of only whitespaces
-#for par in list(data.keys()):
-#    if data[par]['text'].isspace():
-#        del data[par]
+def extractPhotos():
+    # Generate ElementTree from hocr in argv[2]
+    tree = ET.parse(sys.argv[2])
+    root = tree.getroot() #root[0] = <head>; root[1] = <body>
 
-def drawBoxes(image, data):
+    # TODO : if there are other pages needs to iterate over them to parse
+    # sets page1 to the firt page in root
+    page1 = root[1][0]
+    
+    # list that will hold the tupples(photo_id, [box coordinates])
+    photos = []
+    # iterate by every child of page1 and extract paragraphs bbox coordinates every word to a dictionary indexed by paragraph id
+    for child in page1.iter():
+        if child.get('class') == 'ocr_photo':
+            photos.append((child.get('id'), child.get('title').split()[1:]))
+
+    image = Image.open(sys.argv[1])
+    for p in photos:
+        tmpImage = image.crop((int(p[1][0]), int(p[1][1]), int(p[1][2]), int(p[1][3])))
+        tmpImage.save("out/" + p[0] + ".jpg")
+    
+    return photos
+
+def drawPhotosBoxes(image, photos):
+    for p in photos:
+        x, y, x2, y2 = int(p[1][0]), int(p[1][1]), int(p[1][2]), int(p[1][3])        
+        ImageDraw.Draw(image).rectangle([x, y, x2, y2], fill=None, outline='red')
+
+def drawParagraphBoxes(image, data):
     # draw paragraph boxes
-    for par in data:
-        
-        x, y, height, width =  int(data[par]['bbox'][0]), int(data[par]['bbox'][1]), int(data[par]['bbox'][2]), int(data[par]['bbox'][3])
-       
-        ImageDraw.Draw(image).rectangle([x, y, height, width], fill=None, outline='green')
+    for par in data:    
+        x, y, x2, y2 =  int(data[par]['bbox'][0]), int(data[par]['bbox'][1]), int(data[par]['bbox'][2]), int(data[par]['bbox'][3])
+        ImageDraw.Draw(image).rectangle([x, y, x2, y2], fill=None, outline='green')
 
+def drawBoxes(image, data, photos):
+    drawPhotosBoxes(image, photos)    
+    drawParagraphBoxes(image, data)
     image.show()
 
 def main():
     image = parseArgv()
     data = parseHocr()
-    breakpoint()
+    photos = extractPhotos()
+    drawBoxes(image, data, photos)
 
 if __name__ == "__main__":
     main()
