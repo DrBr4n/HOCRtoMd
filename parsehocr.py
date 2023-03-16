@@ -106,6 +106,12 @@ def drawBoxes(image, data, photos):
     drawParagraphBoxes(image, data)
     image.show()
 
+def writeToTxt(data):
+    f = open("out/out.txt", 'w')
+    for d in data:
+        f.write(f"{d}, {data[d].get('bbox')}, {data[d].get('text')}")
+        f.write("\n")
+
 def main():
 
     if (len(sys.argv) == 1) : 
@@ -115,6 +121,6 @@ def main():
     data = parseHocr()
     photos = extractPhotos()
     drawBoxes(image, data, photos)
-
+    writeToTxt(data)
 if __name__ == "__main__":
     main()
