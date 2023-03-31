@@ -67,6 +67,30 @@ def parseHocr():
     
     return data 
 
+def parseHocrv2():
+    # Generate ElementTree from hocr in argv[2]
+    tree = ET.parse(sys.argv[2])
+    root = tree.getroot()[1] #root[0] = <head>; root[1] = <body>
+    page1 = root[0] # TODO : if there are other pages needs to iterate over them to parse #for page in root?
+    page1data = {}
+    
+    last_carea = last_par = last_line = ""
+    
+    for child in page1.iter():
+        if child.get('class') == 'ocr_carea':
+            last_carea = child.get('id')
+            page1data[last_carea] = {'bbox':child.get('title').split()[1:], 'paragraphs':{}}
+        elif child.get('class') == 'ocr_par':
+            last_par = child.get('id')
+            page1data[last_carea]['paragraphs'][last_par] = {'bbox':child.get('title').split()[1:], 'lang':child.get('lang'), 'lines':{}}
+        elif child.get('class') == 'ocr_line' or child.get('class') == 'ocr_textfloat' or child.get('class') == 'ocr_header' or child.get('class') == 'ocr_caption':
+            last_line = child.get('id')
+            page1data[last_carea]['paragraphs'][last_par]['lines'][last_line] = {'bbox':child.get('title').split()[1:4], 'x_size':child.get('title').split()[9], 'words':[], 'isCaption':False}
+        elif child.get('class') == 'ocrx_word':
+            page1data[last_carea]['paragraphs'][last_par]['lines'][last_line]['words'].append(child.text)
+
+    return page1data 
+
 def extractPhotos():
     # Generate ElementTree from hocr in argv[2]
     tree = ET.parse(sys.argv[2])
@@ -112,13 +136,24 @@ def writeToTxt(data):
         f.write(f"{d}, {data[d].get('bbox')}, {data[d].get('text')}")
         f.write("\n")
 
+def writeToTxtv2(data):
+    f = open("out/out.txt", 'w')
+    for carea in data:
+        f.write(f"{carea}:bbox{data[carea]['bbox']}\n")
+        for par in data[carea]['paragraphs']:
+            f.write(f"\t {par}:bbox{data[carea]['paragraphs'][par]['bbox']}\n")
+            for line in data[carea]['paragraphs'][par]['lines']: 
+                f.write("\t\t" + " ".join(data[carea]['paragraphs'][par]['lines'][line]['words']) + "\n")
+
 def main():
 
     if (len(sys.argv) == 1) : 
         help()
         return 
     image = parseArgv()
-    data = parseHocr()
+    data = parseHocrv2()
+    writeToTxtv2(data)
+    breakpoint() 
     photos = extractPhotos()
     drawBoxes(image, data, photos)
     writeToTxt(data)
