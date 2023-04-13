@@ -8,14 +8,25 @@ class Page:
         self.id = id
         self.careas = []
         self.careasIdx = -1
+        self.photos = []
+        self.photosIdx = -1
 
     def addCarea(self, c): 
         self.careasIdx += 1
         self.careas.append(c)
 
+    def addPhoto(self, photo):
+        self.photosIdx += 1
+        self.photos.append(photo)
+
     def addPar(self, p): self.careas[self.careasIdx].addPar(p) 
     def addLine(self, l): self.careas[self.careasIdx].addLine(l) 
     def addWord(self, w): self.careas[self.careasIdx].addWord(w) 
+
+class Photo:
+    def __init__(self, id, bbox):
+        self.id = id
+        self.bbox = bbox
 
 class Carea:
     def __init__(self, id, bbox):
@@ -101,6 +112,8 @@ def parseHocr():
             p1.addLine(Line(child.get('id'), bbox, child.get('title').split()[9]))
         elif child.get('class') == 'ocrx_word':
             p1.addWord(Word(child.get('id'), child.get('title').split()[1:5], child.get('title').split()[6], child.text))
+        elif child.get('class') == 'ocr_photo':
+            p1.addPhoto(Photo(child.get('id'), child.get('title').split()[1:5]))
 
     return p1 
 
@@ -122,12 +135,25 @@ def drawLinesBoxes(image, pageObject):
                 x, y, x2, y2 = int(line.bbox[0]), int(line.bbox[1]), int(line.bbox[2]), int(line.bbox[3])
                 ImageDraw.Draw(image).rectangle([x, y, x2, y2], fill=None, outline='red')
 
+def drawPhotosBoxes(image, pageObject):
+    for photo in pageObject.photos:
+         x, y, x2, y2 = int(photo.bbox[0]), int(photo.bbox[1]), int(photo.bbox[2]), int(photo.bbox[3])
+         ImageDraw.Draw(image).rectangle([x, y, x2, y2], fill=None, outline='red')
+
+def extractPhotos(image, pageObject):
+    for photo in pageObject.photos:
+        x, y, x2, y2 = int(photo.bbox[0]), int(photo.bbox[1]), int(photo.bbox[2]), int(photo.bbox[3])
+        tmpImage = image.crop((x, y, x2, y2))
+        tmpImage.save("out/" + photo.id + ".jpg")
+
 def main():
     image = parseArgv()
     page1 = parseHocr()
-    drawCareaBoxes(image, page1)
-    #drawParBoxes(image, page1)
+    #drawCareaBoxes(image, page1)
+    drawParBoxes(image, page1)
     #drawLinesBoxes(image, page1)
+    drawPhotosBoxes(image, page1)
+    extractPhotos(image, page1)
     image.show()
 
 if __name__ == "__main__":
