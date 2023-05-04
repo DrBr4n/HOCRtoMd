@@ -2,6 +2,7 @@ import sys
 from PIL import Image, ImageDraw
 import xml.etree.ElementTree as ET
 import pytesseract
+import copy
 
 
 class Page:
@@ -106,75 +107,76 @@ def parseHocr():
 
     p1 = Page(page1.get('id'))
     for child in page1.iter():
-        if child.get('class') == 'ocr_carea':
-            p1.addCarea(Carea(child.get('id'), child.get('title').split()[1:5]))
-        elif child.get('class') == 'ocr_par':
-            p1.addPar(Par(child.get('id'), child.get('title').split()[1:5], child.get('lang')))
-        elif child.get('class') == 'ocr_line' or child.get('class') == 'ocr_textfloat' or child.get('class') == 'ocr_header' or child.get('class') == 'ocr_caption':
-            bbox = child.get('title').split()[1:5]
-            bbox[3] = bbox[3][:-1]  # clean ; in the last bbox coord
-            p1.addLine(Line(child.get('id'), bbox, child.get('title').split()[9]))
-        elif child.get('class') == 'ocrx_word':
-            p1.addWord(Word(child.get('id'), child.get('title').split()[1:5], child.get('title').split()[6], child.text))
-        elif child.get('class') == 'ocr_photo':
-            p1.addPhoto(Photo(child.get('id'), child.get('title').split()[1:5]))
+        ocr_class = child.get('class')
+        title = child.get('title').split()
+
+        for idx in range(len(title)):
+            if title[idx] == 'bbox':
+                bbox = [int(title[idx+1]), int(title[idx+2]), int(title[idx+3])]
+                if title[idx+4][-1] == ';':
+                    bbox.append(int(title[idx+4][:-1]))
+                else:
+                    bbox.append(int(title[idx+4]))
+            if title[idx] == 'x_size':
+                x_size = float(title[idx+1][:-1])
+            if title[idx] == 'x_wconf':
+                x_wconf = int(title[idx+1])
+
+        match ocr_class:
+            case 'ocr_carea':
+                p1.addCarea(Carea(child.get('id'), bbox))
+            case 'ocr_par':
+                p1.addPar(Par(child.get('id'), bbox, child.get('lang')))
+            case 'ocr_line' | 'ocr_textfloat' | 'ocr_header' | 'ocr_caption':
+                p1.addLine(Line(child.get('id'), bbox, x_size))
+            case 'ocrx_word':
+                p1.addWord(Word(child.get('id'), bbox, x_wconf, child.text))
+            case 'ocr_photo':
+                p1.addPhoto(Photo(child.get('id'), bbox))
 
     return p1
 
 
 def drawCareaBoxes(image, pageObject):
     for carea in pageObject.careas:
-        x, y, x2, y2 = int(carea.bbox[0]), int(carea.bbox[1]), int(carea.bbox[2]), int(carea.bbox[3])
-        ImageDraw.Draw(image).rectangle([x, y, x2, y2], fill=None, outline='blue')
+        x, y, x2, y2 = carea.bbox[0] ,carea.bbox[1], carea.bbox[2], carea.bbox[3]
+        ImageDraw.Draw(image).rectangle([x, y, x2, y2], fill=None, outline='red', width=3)
 
 
 def drawParBoxes(image, pageObject):
     for carea in pageObject.careas:
         for paragraph in carea.pars:
-            x, y, x2, y2 = int(paragraph.bbox[0]), int(paragraph.bbox[1]), int(paragraph.bbox[2]), int(paragraph.bbox[3])
-            ImageDraw.Draw(image).rectangle([x, y, x2, y2], fill=None, outline='green')
+            x, y, x2, y2 = paragraph.bbox[0], paragraph.bbox[1], paragraph.bbox[2], paragraph.bbox[3]
+            ImageDraw.Draw(image).rectangle([x, y, x2, y2], fill=None, outline='blue', width=2)
 
 
 def drawLinesBoxes(image, pageObject):
     for carea in pageObject.careas:
         for paragraph in carea.pars:
             for line in paragraph.lines:
-                x, y, x2, y2 = int(line.bbox[0]), int(line.bbox[1]), int(line.bbox[2]), int(line.bbox[3])
-                ImageDraw.Draw(image).rectangle([x, y, x2, y2], fill=None, outline='red')
+                x, y, x2, y2 = line.bbox[0], line.bbox[1], line.bbox[2], line.bbox[3]
+                ImageDraw.Draw(image).rectangle([x, y, x2, y2], fill=None, outline='green')
 
 
 def drawPhotosBoxes(image, pageObject):
     for photo in pageObject.photos:
-        x, y, x2, y2 = int(photo.bbox[0]), int(photo.bbox[1]), int(photo.bbox[2]), int(photo.bbox[3])
-        ImageDraw.Draw(image).rectangle([x, y, x2, y2], fill=None, outline='red')
+        x, y, x2, y2 = photo.bbox[0], photo.bbox[1], photo.bbox[2], photo.bbox[3]
+        ImageDraw.Draw(image).rectangle([x, y, x2, y2], fill=None, outline='purple')
+
+
+def drawArticlesBoxes(image, artigos):
+    for artigo in artigos:
+        x, y, x2, y2 = artigo.bbox[0], artigo.bbox[1], artigo.bbox[2], artigo.bbox[3]
+        ImageDraw.Draw(image).rectangle([x, y, x2, y2], fill=None, outline='blue', width=2)
 
 
 def extractPhotos(image, pageObject):
     for photo in pageObject.photos:
-        x, y, x2, y2 = int(photo.bbox[0]), int(photo.bbox[1]), int(photo.bbox[2]), int(photo.bbox[3])
+        x, y, x2, y2 = photo.bbox[0], photo.bbox[1], photo.bbox[2], photo.bbox[3]
         tmpImage = image.crop((x, y, x2, y2))
         tmpImage.save("out/" + photo.id + ".jpg")
 
-
-def writeToTxt(data):
-    f = open("out/out.txt", 'w')
-    for d in data:
-        f.write(f"{d}, {data[d].get('bbox')}, {data[d].get('text')}")
-        f.write("\n")
-
-
-def writeToTxtv2(data):
-    f = open("out/out.txt", 'w')
-    for carea in data:
-        f.write(f"{carea}:bbox{data[carea]['bbox']}\n")
-        for par in data[carea]['paragraphs']:
-            f.write(f"\t {par}:bbox{data[carea]['paragraphs'][par]['bbox']}\n")
-            for line in data[carea]['paragraphs'][par]['lines']:
-                f.write("\t\t" + " ".join(data[carea]['paragraphs'][par]['lines'][line]['words']) + "\n")
-
-
-def outputToText(pageObject):
-    for carea in pageObject.carea:
+    for carea in pageObject.careas:
         print(f"Carea: id:{carea.id} bbox:{carea.bbox}")
         for par in carea.pars:
             print(f"\tParagraph: id:{par.id} bbox:{par.bbox} lang:{par.lang}")
@@ -183,16 +185,65 @@ def outputToText(pageObject):
                 print(f"\t\t\tWords: {' '.join([word.text for word in line.words])}")
 
 
+# Carea: id, bbox, pars[Par], parsIdx
+# Par: id, bbox, lang, lines[Line], linesIdx
+# Line: id, bbox, x_size, words[Word], wordIdx
+# Word: id, bbox, x_wconf, text
+
+# articles is a list of careas
+def createArticles(pageObject):
+    articles = copy.deepcopy(pageObject.careas)
+    return articles
+
+
+def organizeArticles(articles):
+    toRemove = []
+    for idx in range(len(articles) - 1):
+        # if x_size1 > x_size2
+        print(articles[idx].pars[0].lines[0].x_size ,articles[idx+1].pars[0].lines[0].x_size)
+        if articles[idx].pars[0].lines[0].x_size > articles[idx+1].pars[0].lines[0].x_size:
+            print('toRemove')
+            articles[idx].pars += articles[idx+1].pars
+            toRemove.append(articles[idx+1].id)
+        # if bbox1 is shorter than bbox2
+        #if articles[idx].bbox[2] < articles[idx+1].bbox[2]:
+        #    articles[idx].pars += articles[idx+1].pars
+        #    toRemove.append(articles[idx+1].id)
+
+    for article in articles:
+        if article.id in toRemove:
+            articles.remove(article)
+
+    return articles
+
+
+def createMarkdown(articles):
+    f = open("out/out.txt", 'w')
+    for article in articles:
+        f.write("\n\n___\n\n")
+        for par in article.pars:
+            for line in par.lines:
+                f.write(" ".join([word.text for word in line.words]) + "\\\n")
+            f.write("\n")
+
+
 def main():
     image = parseArgv()
     page1 = parseHocr()
+
+    articles = createArticles(page1)
+    # articles = organizeArticles(articles)
+    createMarkdown(articles)
+
     # drawCareaBoxes(image, page1)
-    drawParBoxes(image, page1)
+    # drawParBoxes(image, page1)
     # drawLinesBoxes(image, page1)
-    drawPhotosBoxes(image, page1)
-    extractPhotos(image, page1)
-    # image.show()
-    outputToText(page1)
+    # drawPhotosBoxes(image, page1)
+    drawArticlesBoxes(image, articles)
+
+    image.show()
+
+    # extractPhotos(image, page1)
 
 
 if __name__ == "__main__":
