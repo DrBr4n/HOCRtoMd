@@ -25,7 +25,7 @@
     a      Draw Articles limits and show sourceImage
     e      Extract Images into out/
 
-Help: python3 main.py help
-Usage: python3 main.py relativePathToSourceImage relativePathToOutputFile PSM otherFeatures
-Example: python3 main.py assets/assistenteAoEmigrante_0.png out/aoe0.hocr 3 cie
+Help: python3 main.py help\
+Usage: python3 main.py relativePathToSourceImage relativePathToOutputFile PSM otherFeatures\
+Example: python3 main.py assets/assistenteAoEmigrante_0.png out/aoe0.hocr 3 cie\
 
