@@ -1,6 +1,5 @@
-# HOCRtoMd
+# hOCRtoMarkdown
 
-# Help
 ## Page segmentation modes:
       0    Orientation and script detection (OSD) only.
       1    Automatic page segmentation with OSD.
