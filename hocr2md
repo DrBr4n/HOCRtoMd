@@ -1,9 +1,13 @@
+#!/usr/bin/python3
 import sys
 import PIL.Image
 import PIL.ImageDraw
 import xml.etree.ElementTree as ET
 import pytesseract
 import copy
+import getopt
+import os
+import re
 
 
 class Page:
@@ -18,9 +22,9 @@ class Page:
         self.careasIdx += 1
         self.careas.append(carea)
 
-    def addImage(self, sourceImage):
+    def addImage(self, oppenedImage):
         self.imagesIdx += 1
-        self.images.append(sourceImage)
+        self.images.append(oppenedImage)
 
     def addPar(self, par): self.careas[self.careasIdx].addPar(par)
     def addLine(self, line): self.careas[self.careasIdx].addLine(line)
@@ -33,6 +37,8 @@ class Carea:
         self.bbox = bbox
         self.pars = []
         self.parsIdx = -1
+        self.xsize = 0
+        self.lines = 0
 
     def addPar(self, par):
         self.parsIdx += 1
@@ -84,15 +90,15 @@ class My_Image:
         self.bbox = bbox
 
 
-def parseHocr():
+def parseHocr(hocrPath):
     # Generate ElementTree from hocr in argv[2]
-    tree = ET.parse(sys.argv[2])
+    tree = ET.parse(hocrPath)
     root = tree.getroot()[1]    # root[0] = <head>; root[1] = <body>
 
-    page1 = root[0]     # TODO : if there are other pages needs to iterate over them to parse #for page in root?
+    page = root[0]     # TODO : if there are other pages needs to iterate over them to parse #for page in root?
 
-    p1 = Page(page1.get('id'))
-    for child in page1.iter():
+    p1 = Page(page.get('id'))
+    for child in page.iter():
         ocr_class = child.get('class')
         title = child.get('title').split()
 
@@ -123,67 +129,66 @@ def parseHocr():
     return p1
 
 
-def drawCareaBoxes(sourceImage, pageObject):
+def drawCareaBoxes(oppenedImage, pageObject):
     for carea in pageObject.careas:
         x, y = carea.bbox[0], carea.bbox[1]
         x2, y2 = carea.bbox[2], carea.bbox[3]
-        PIL.ImageDraw.Draw(sourceImage).rectangle([x, y, x2, y2],
+        PIL.ImageDraw.Draw(oppenedImage).rectangle([x, y, x2, y2],
                                                   fill=None,
                                                   outline='red',
                                                   width=3)
 
 
-def drawParBoxes(sourceImage, pageObject):
+def drawParBoxes(oppenedImage, pageObject):
     for carea in pageObject.careas:
         for paragraph in carea.pars:
             x, y = paragraph.bbox[0], paragraph.bbox[1]
             x2, y2 = paragraph.bbox[2], paragraph.bbox[3]
-            PIL.ImageDraw.Draw(sourceImage).rectangle([x, y, x2, y2],
+            PIL.ImageDraw.Draw(oppenedImage).rectangle([x, y, x2, y2],
                                                       fill=None,
                                                       outline='blue',
                                                       width=2)
 
 
-def drawLinesBoxes(sourceImage, pageObject):
+def drawLinesBoxes(oppenedImage, pageObject):
     for carea in pageObject.careas:
         for paragraph in carea.pars:
             for line in paragraph.lines:
                 x, y = line.bbox[0], line.bbox[1]
                 x2, y2 = line.bbox[2], line.bbox[3]
-                PIL.ImageDraw.Draw(sourceImage).rectangle([x, y, x2, y2],
+                PIL.ImageDraw.Draw(oppenedImage).rectangle([x, y, x2, y2],
                                                           fill=None,
                                                           outline='green')
 
 
-def drawImageBoxes(sourceImage, pageObject):
+def drawImageBoxes(oppenedImage, pageObject):
     for image in pageObject.images:
         x, y = image.bbox[0], image.bbox[1],
         x2, y2 = image.bbox[2], image.bbox[3]
-        PIL.ImageDraw.Draw(sourceImage).rectangle([x, y, x2, y2],
-                                                  fill=None,
-                                                  outline='purple')
+        PIL.ImageDraw.Draw(oppenedImage).rectangle([x, y, x2, y2],
+                                                    fill=None,
+                                                    outline='purple')
 
 
-def drawArticlesBoxes(sourceImage, artigos):
+def drawArticlesBoxes(oppenedImage, artigos):
     for artigo in artigos:
         x, y = artigo.bbox[0], artigo.bbox[1]
         x2, y2 = artigo.bbox[2], artigo.bbox[3]
-        PIL.ImageDraw.Draw(sourceImage).rectangle([x, y, x2, y2],
+        PIL.ImageDraw.Draw(oppenedImage).rectangle([x, y, x2, y2],
                                                   fill=None,
                                                   outline='blue',
                                                   width=2)
 
 
-def extractImages(sourceImage, pageObject):
+def extractImages(oppenedImage, pageObject, outputImages):
     for image in pageObject.images:
         x, y = image.bbox[0], image.bbox[1]
         x2, y2 = image.bbox[2], image.bbox[3]
-        tmpImage = sourceImage.crop((x, y, x2, y2))
-        tmpImage.save("out/" + image.id + ".jpg")
+        tmpImage = oppenedImage.crop((x, y, x2, y2))
+        tmpImage.save(outputImages + "/" + image.id + ".jpg")
 
 
 def organizeArticles(articles):
-
     nAr = len(articles) - 1
     idx = 0
     lastIdx = 0
@@ -221,8 +226,8 @@ def organizeArticles(articles):
     return articles
 
 
-def createMarkdown(articles):
-    f = open("out/out.md", 'w')
+def createMarkdown(articles, outputFile):
+    f = open(outputFile, 'w')
     for article in articles:
         f.write("\n\n___\n\n")
         for par in article.pars:
@@ -231,74 +236,143 @@ def createMarkdown(articles):
             f.write("\n")
 
 
+def getXSize(pageObject):
+    xsizes = {}
+    for carea in pageObject.careas:
+        xsizeTotal = sum([line.x_size for par in carea.pars for line in par.lines])
+        nlinhas = sum([len(par.lines) for par in carea.pars])
+        carea.xsize = xsizeTotal / nlinhas
+        carea.lines = nlinhas
+
+    return xsizes
+
+
 def help():
     print("""
-Page segmentation modes:
-      0    Orientation and script detection (OSD) only.
-      1    Automatic page segmentation with OSD.
-      2    Automatic page segmentation, but no OSD, or OCR. (not implemented)
-      3    Fully automatic page segmentation, but no OSD. (Default)
-      4    Assume a single column of text of variable sizes.
-      5    Assume a single uniform block of vertically aligned text.
-      6    Assume a single uniform block of text.
-      7    Treat the sourceImage as a single text line.
-      8    Treat the sourceImage as a single word.
-      9    Treat the sourceImage as a single word in a circle.
-     10    Treat the sourceImage as a single character.
-     11    Sparse text. Find as much text as possible in no particular order.
-     12    Sparse text with OSD.
-     13    Raw line. Treat the sourceImage as a single text line,
-           bypassing hacks that are Tesseract-specific.
+NAME
+    hocr2md - hocr to markdown
 
-Other Features:
-    c      Draw Careas limits and show sourceImage
-    l      Draw Lines limits and show sourceImage
-    i      Draw Images limits and show sourceImage
-    a      Draw Articles limits and show sourceImage
-    e      Extract Images into out/
+SYNOPSIS
+    hocr2md sourceImage [OPTION]
 
-Usage: python3 main.py relativePathToSourceImage relativePathToOutputFile PSM otherFeatures
-Example: python3 main.py assets/assistenteAoEmigrante_0.png out/aoe0.hocr 3 cie\n""")
+DESCRIPTION
+    Converts image into hocr file, via tesseract, and hocr into markdown.
+        -h, --help              display this help menu
 
+        -o, --output            choose name and location to output markdown file (location must exist)
+
+        -e, --extractImages     extract images into nameOfInputFile_Images/
+
+        -p, --psm               choose psm to be used by tesseract (default=3)
+
+        -l, --lang              choose language to be used by tesseract (default=por)
+
+        --extractImagesFolder   choose folder to extract images
+
+        --dc                    show image with Careas limits drawn
+
+        --dp                    show image with Pars limits drawn
+
+        --dl                    show image with Lines limits drawn
+
+        --di                    show image with Images limits drawn
+
+        --da                    show image with Articles limits drawn
+
+    Some page segmentation modes, get a full list with tesseract --help-psm:
+         1                      Automatic page segmentation with OSD.
+         3                      Fully automatic page segmentation, but no OSD. (Default)
+         4                      Assume a single column of text of variable sizes.
+         5                      Assume a single uniform block of vertically aligned text.
+         6                      Assume a single uniform block of text.
+        11                      Sparse text. Find as much text as possible in no particular order.
+        13                      Raw line. Treat the oppenedImage as a single text line,
+                                bypassing hacks that are Tesseract-specific.\n""")
 
 def main():
-    # Print help menu
-    if len(sys.argv) == 1 or "help" in sys.argv:
+    try:
+        opts, args = getopt.getopt(sys.argv[2:], "ho:ep:l:", ["help", "output=",
+                                                              "extractImages",
+                                                              "extractImagesFolder=",
+                                                              "psm=", "lang=",
+                                                              "dc", "dp", "dl",
+                                                              "di", "da"])
+    except getopt.GetoptError as err:
+        print(err)
+
+    if len(sys.argv) == 1 or sys.argv[1] == '-h' or sys.argv[1] == '--help':
         help()
         quit()
 
-    if len(sys.argv) >= 4:
-        # Open sourceImage from argv[1]
-        sourceImage = PIL.Image.open(sys.argv[1])
+    # Default options
+    sourceFile = sys.argv[1]
+    outputFile = sys.argv[1].split('.')[0].split('/')[-1] + ".md"
+    psmOption = "3"
+    language = "por"
+    extract = False
 
-        # Create HOCR output in argv[2]
-        hocr = pytesseract.image_to_pdf_or_hocr(sourceImage,
-                                                config='--psm ' + sys.argv[3],
-                                                lang="por", extension='hocr')
-        with open(sys.argv[2], 'w+b') as f:
-            f.write(hocr)
+    for opt, arg in opts:
+        if opt in ['-h', '--help']:
+            help()
+            quit()
+        if opt in ['-o', '--output']:
+            outputFile = arg
+        elif opt in ['-p', '--psm']:
+            psmOption = arg
+        elif opt in ['-l', '--lang']:
+            language = arg
+        elif opt in ['-e', '--extractImages']:
+            extract = True
+            sourceFilePath = sys.argv[1].split('.')[0]
+            outputImages = sourceFilePath.split('/')[-1] + "_Images"
+            if not os.path.exists(outputImages):
+                os.mkdir(outputImages)
+        elif opt in ['--extractImagesFolder']:
+            outputImages = arg
+            if not os.path.exists(outputImages):
+                os.mkdir(outputImages)
 
-        page1 = parseHocr()
+    oppenedImage = PIL.Image.open(sourceFile)
+    hocr = pytesseract.image_to_pdf_or_hocr(oppenedImage,
+                                            config='--psm ' + psmOption,
+                                            lang=language, extension='hocr')
 
-    articles = copy.deepcopy(page1.careas)
+    hocrPath = sys.argv[1].split('.')[0].split('/')[-1] + ".hocr"
+    with open(hocrPath, 'w+b') as f:
+        f.write(hocr)
+    page = parseHocr(hocrPath)
+
+    # Ensure extractImages runs before any draw
+    if extract:
+        extractImages(oppenedImage, page, outputImages)
+
+    draw = False
+    for opt, arg in opts:
+        if opt in ['--dc']:
+            drawCareaBoxes(oppenedImage, page)
+            draw = True
+        elif opt in ['--dp']:
+            drawParBoxes(oppenedImage, page)
+            draw = True
+        elif opt in ['--dl']:
+            drawLinesBoxes(oppenedImage, page)
+            draw = True
+        elif opt in ['--di']:
+            drawImageBoxes(oppenedImage, page)
+            draw = True
+        elif opt in ['--da']:
+            drawArticlesBoxes(oppenedImage, page)
+            draw = True
+
+    if draw:
+        oppenedImage.show()
+
+    articles = copy.deepcopy(page.careas)
     # articles = organizeArticles(articles)
-    createMarkdown(articles)
+    createMarkdown(articles, outputFile)
 
-    if len(sys.argv) == 5:
-        if "c" in sys.argv[4]:
-            drawCareaBoxes(sourceImage, page1)
-        if "p" in sys.argv[4]:
-            drawParBoxes(sourceImage, page1)
-        if "l" in sys.argv[4]:
-            drawLinesBoxes(sourceImage, page1)
-        if "i" in sys.argv[4]:
-            drawImageBoxes(sourceImage, page1)
-        if "a" in sys.argv[4]:
-            drawArticlesBoxes(sourceImage, articles)
-        if "e" in sys.argv[4]:
-            extractImages(sourceImage, page1)
-
-        sourceImage.show()
+    # xs = getXSize(page)
+    # breakpoint()
 
 
 if __name__ == "__main__":
