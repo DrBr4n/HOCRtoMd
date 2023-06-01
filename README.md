@@ -15,7 +15,9 @@
         -l, --lang              choose language to be used by tesseract (default=por)
 
         --extractImagesFolder   choose folder to extract images
-
+        
+        --conf                  choose value for line confidence (default=40, line is deleted if below confidence)
+        
         --dc                    show image with Careas limits drawn
 
         --dp                    show image with Pars limits drawn
