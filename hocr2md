@@ -39,6 +39,7 @@ class Carea:
         self.parsIdx = -1
         self.xsize = 0
         self.lines = 0
+        self.textType = 'normal'
 
     def addPar(self, par):
         self.parsIdx += 1
@@ -135,7 +136,7 @@ def drawCareaBoxes(oppenedImage, pageObject):
         x2, y2 = carea.bbox[2], carea.bbox[3]
         PIL.ImageDraw.Draw(oppenedImage).rectangle([x, y, x2, y2],
                                                   fill=None,
-                                                  outline='red',
+                                                  outline='blue',
                                                   width=3)
 
 
@@ -146,7 +147,7 @@ def drawParBoxes(oppenedImage, pageObject):
             x2, y2 = paragraph.bbox[2], paragraph.bbox[3]
             PIL.ImageDraw.Draw(oppenedImage).rectangle([x, y, x2, y2],
                                                       fill=None,
-                                                      outline='blue',
+                                                      outline='orange',
                                                       width=2)
 
 
@@ -167,16 +168,16 @@ def drawImageBoxes(oppenedImage, pageObject):
         x2, y2 = image.bbox[2], image.bbox[3]
         PIL.ImageDraw.Draw(oppenedImage).rectangle([x, y, x2, y2],
                                                     fill=None,
-                                                    outline='purple')
+                                                    outline='red')
 
 
 def drawArticlesBoxes(oppenedImage, artigos):
-    for artigo in artigos:
+    for artigo in artigos.careas:
         x, y = artigo.bbox[0], artigo.bbox[1]
         x2, y2 = artigo.bbox[2], artigo.bbox[3]
         PIL.ImageDraw.Draw(oppenedImage).rectangle([x, y, x2, y2],
                                                   fill=None,
-                                                  outline='blue',
+                                                  outline='purple',
                                                   width=2)
 
 
@@ -226,25 +227,115 @@ def organizeArticles(articles):
     return articles
 
 
+def isEmpty(caera):
+    falseList = []
+    for par in caera.pars:
+        if len(par.lines) > 0:
+            falseList.append(True)
+        else:
+            falseList.append(False)
+    if True in falseList:
+        return False
+    return True
+
+
+def confCheck(pageObject, conf):
+    for carea in pageObject.careas:
+        for par in carea.pars:
+            rmlines = []
+            for line in par.lines:
+                wConf = []
+                for word in line.words:
+                    wConf.append(word.x_wconf)
+                if len(wConf) > 0 and sum(wConf)/len(wConf) < conf:
+                    rmlines.append(line)
+            for rmline in rmlines:
+                par.lines.remove(rmline)
+
+    return pageObject
+
+
+def cleanTxt(pageObject):
+    for carea in pageObject.careas:
+        for par, indexPar in zip(carea.pars, range(0, len(carea.pars))):
+            for index in range(0, len(par.lines)):
+                if par.lines[index].words[-1].text[-1] == '-':
+                    if len(carea.pars) > (indexPar+1) and index + 1 > len(par.lines) - 1:
+                        carea.pars[indexPar+1].lines[0].words[0].text = par.lines[index].words[-1].text[:-1] + carea.pars[indexPar+1].lines[0].words[0].text
+                        par.lines[index].words.pop()
+                    elif index + 1 <= len(par.lines) - 1:
+                        par.lines[index + 1].words[0].text = par.lines[index].words[-1].text[:-1] + par.lines[index + 1].words[0].text
+                        par.lines[index].words.pop()
+    return pageObject
+
+
+def removeCarateresNS(pageObject):
+    carateres = ['+','@','#','$','%','&','*','|','=','á','à','é','è','í','ì',
+                 'ó','ò','ú','ù','Á','À','É','È','Í','Ì','Ó','Ò','Ú','Ù','â',
+                 'ê','î','ô','Â','Ê','Î','Ô','ã','õ','Ã','Õ','ç','Ç']
+    for carea in pageObject.careas:
+        toremoveLine = []
+        for par in carea.pars:
+            for line in par.lines:
+                for word in line.words:
+                    if word.text in carateres:
+                        if len(line.words) == 1:
+                            toremoveLine.append(line)
+                        else:
+                            line.words.remove(word)
+            for rmLine in toremoveLine:
+                par.lines.remove(rmLine)
+
+    return pageObject
+
+
 def createMarkdown(articles, outputFile):
     f = open(outputFile, 'w')
+    wasTitle = False
     for article in articles:
-        f.write("\n\n___\n\n")
-        for par in article.pars:
-            for line in par.lines:
-                f.write(" ".join([word.text for word in line.words]) + "\\\n")
-            f.write("\n")
+        if not (isEmpty(article)):
+            if not (wasTitle):
+                f.write("\n\n___\n\n")
+            for par in article.pars:
+                for line in par.lines:
+                    wasTitle = False
+                    if article.textType == 'normal':
+                        f.write(" ".join([word.text for word in line.words]) + "\\\n")
+                    elif article.textType == 'h1':
+                        f.write("# " + " ".join([word.text for word in line.words]) + "\\\n")
+                        wasTitle = True
+                    elif article.textType == 'h2':
+                        f.write("## " + " ".join([word.text for word in line.words]) + "\\\n")
+                        wasTitle = True
+                    elif article.textType == 'h3':
+                        f.write("### " + " ".join([word.text for word in line.words]) + "\\\n")
+                        wasTitle = True
+                f.write("\n")
 
 
-def getXSize(pageObject):
-    xsizes = {}
+def setCareasXSize(pageObject):
     for carea in pageObject.careas:
         xsizeTotal = sum([line.x_size for par in carea.pars for line in par.lines])
         nlinhas = sum([len(par.lines) for par in carea.pars])
         carea.xsize = xsizeTotal / nlinhas
         carea.lines = nlinhas
 
-    return xsizes
+
+def chooseTitles(pageObject):
+    xsizes = {}
+    for carea in pageObject.careas:
+        if round(carea.xsize) in xsizes:
+            xsizes[round(carea.xsize)] += carea.lines
+        else:
+            xsizes[round(carea.xsize)] = carea.lines
+
+    for carea in pageObject.careas:
+        if round(carea.xsize) > 20 and xsizes[round(carea.xsize)] <= 20:
+            carea.textType = "h3"
+        if round(carea.xsize) >= 25 and xsizes[round(carea.xsize)] <= 20:
+            carea.textType = "h2"
+        if round(carea.xsize) >= 30 and xsizes[round(carea.xsize)] <= 5:
+            carea.textType = "h1"
 
 
 def help():
@@ -268,6 +359,8 @@ DESCRIPTION
         -l, --lang              choose language to be used by tesseract (default=por)
 
         --extractImagesFolder   choose folder to extract images
+
+        --conf                  choose value for line confidence (default=40, line is deleted if below confidence)
 
         --dc                    show image with Careas limits drawn
 
@@ -294,7 +387,7 @@ def main():
         opts, args = getopt.getopt(sys.argv[2:], "ho:ep:l:", ["help", "output=",
                                                               "extractImages",
                                                               "extractImagesFolder=",
-                                                              "psm=", "lang=",
+                                                              "psm=", "lang=", "conf=",
                                                               "dc", "dp", "dl",
                                                               "di", "da"])
     except getopt.GetoptError as err:
@@ -310,6 +403,7 @@ def main():
     psmOption = "3"
     language = "por"
     extract = False
+    conf = 40
 
     for opt, arg in opts:
         if opt in ['-h', '--help']:
@@ -331,6 +425,8 @@ def main():
             outputImages = arg
             if not os.path.exists(outputImages):
                 os.mkdir(outputImages)
+        elif opt in ['--conf']:
+            conf = int(arg)
 
     oppenedImage = PIL.Image.open(sourceFile)
     hocr = pytesseract.image_to_pdf_or_hocr(oppenedImage,
@@ -367,12 +463,17 @@ def main():
     if draw:
         oppenedImage.show()
 
-    articles = copy.deepcopy(page.careas)
+    setCareasXSize(page)
+    chooseTitles(page)
     # articles = organizeArticles(articles)
+    page = cleanTxt(page)
+    page = confCheck(page, conf)
+    page = removeCarateresNS(page)
+    articles = copy.deepcopy(page.careas)
     createMarkdown(articles, outputFile)
 
-    # xs = getXSize(page)
-    # breakpoint()
+
+    #breakpoint()
 
 
 if __name__ == "__main__":
